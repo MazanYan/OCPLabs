@@ -5,9 +5,7 @@
 using namespace std;
 
 MemoryBlockHeader* Allocator::visitNextBlock(MemoryBlockHeader* block) {
-//	MemoryBlockHeader* nextBlock = (MemoryBlockHeader*)((int*)((char*)block + BLOCK_HEADER_SIZE) + block->currSize);
-	//MemoryBlockHeader* nextBlock = (MemoryBlockHeader*)(reinterpret_cast<char*>(block) + block->currSize);
-	MemoryBlockHeader* nextBlock = (MemoryBlockHeader*)((int*)block/* + BLOCK_HEADER_SIZE*/ + block->currSize);
+	MemoryBlockHeader* nextBlock = (MemoryBlockHeader*)((int*)block+ block->currSize);
 	if (nextBlock > operatedMemoryEnd)
 		return operatedMemoryEnd;
 	//if (block == operatedMemoryEnd || nextBlock >= operatedMemoryEnd)
@@ -16,8 +14,6 @@ MemoryBlockHeader* Allocator::visitNextBlock(MemoryBlockHeader* block) {
 }
 
 MemoryBlockHeader* Allocator::visitPrevBlock(MemoryBlockHeader* block) {
-	//MemoryBlockHeader* prevBlock = (MemoryBlockHeader*)((int*)((char*)block - BLOCK_HEADER_SIZE) - block->prevSize);
-	//MemoryBlockHeader* prevBlock = (MemoryBlockHeader*)(reinterpret_cast<char*>(block) - block->prevSize);
 	MemoryBlockHeader* prevBlock = (MemoryBlockHeader*)((int*)block - block->prevSize);
 	if (prevBlock < startBlock)
 		return startBlock;
@@ -89,7 +85,7 @@ void* Allocator::mem_alloc(size_t size) {
 
 			allocatedBlock->used = true;
 			allocatedBlock->currSize = size;
-			MemoryBlockHeader* newFreeBlock = visitNextBlock(allocatedBlock);			// debug here
+			MemoryBlockHeader* newFreeBlock = visitNextBlock(allocatedBlock);
 			newFreeBlock->currSize = oldSize - size;
 			newFreeBlock->used = false;
 			newFreeBlock->prevSize = allocatedBlock->currSize;
@@ -126,11 +122,11 @@ void* Allocator::mem_alloc(size_t size) {
 ссылки на текущий блок.
 6. Если два соседних блока заняты и размер текущего блока равен нужному - возврат ссылки на
 текущий блок.
-
-
 7. Если два соседних блока заняты и размер текущего блока меньше нужного – изменение
 размера текущего блока, создание нового заголовка свободного блока. Изменение заголовка
 следующего блока (размер предыдущего блока). Возврат ссылки на текущий блок.
+
+
 8. Иначе вызов функции mem_alloc. Если возвращенная функцией ссылка не равна NULL,
 копирование данных из старого блока в новый. Возврат ссылки на новый блок.
  * */
@@ -142,28 +138,50 @@ void* Allocator::mem_realloc(void* addr, size_t size) {
 	MemoryBlockHeader* prevBlock = visitPrevBlock(operatedBlock);
 	MemoryBlockHeader* nextBlock = visitNextBlock(operatedBlock);
 	if (isFree(prevBlock) && isFree(nextBlock) && 
-		(prevBlock->currSize + operatedBlock->currSize + nextBlock->currSize >= size)) {
-			prevBlock->currSize += operatedBlock->currSize + nextBlock->currSize;
-			MemoryBlockHeader* afterNewBlock = visitNextBlock(nextBlock);
-			afterNewBlock->prevSize = prevBlock->currSize;
-			move_data(operatedBlock, prevBlock, size);
+			(prevBlock->currSize + operatedBlock->currSize + nextBlock->currSize >= size)) {
+		//mergeThreeBlocks(prevBlock, operatedBlock, nextBlock);
+		prevBlock->currSize = size;
+		move_data(operatedBlock, prevBlock, operatedBlock->currSize);
+		prevBlock->used = true;
+		MemoryBlockHeader* afterNewBlock = visitNextBlock(prevBlock);
+		if (afterNewBlock == nextBlock) {}
+		else {
+			afterNewBlock->currSize = prevBlock->currSize + operatedBlock->currSize + nextBlock->currSize - size;
+			afterNewBlock->used = false;
+			nextBlock->prevSize = afterNewBlock->currSize;
 		}
+		afterNewBlock->prevSize = prevBlock->currSize;
+		return prevBlock;
+	}
 	else if (isFree(prevBlock) && prevBlock->currSize + operatedBlock->currSize >= size) {
-		prevBlock->currSize += operatedBlock->currSize;;
-		nextBlock->prevSize = prevBlock->currSize;
-		move_data(operatedBlock, prevBlock, size);
+		int oldSize = prevBlock->currSize;
+		//mergeTwoBlocks(prevBlock, operatedBlock);
+		prevBlock->currSize = size;
+		move_data(operatedBlock, prevBlock, operatedBlock->currSize);
+		prevBlock->used = true;
+		MemoryBlockHeader* afterNewBlock = visitNextBlock(prevBlock);
+		if (afterNewBlock == nextBlock) {}
+		else {
+			afterNewBlock->currSize = oldSize + operatedBlock->currSize + nextBlock->currSize - size;
+			afterNewBlock->used = false;
+			nextBlock->prevSize = afterNewBlock->currSize;
+		}
+		afterNewBlock->prevSize = prevBlock->currSize;
+		return prevBlock;
 	}
 	else if (isFree(nextBlock) && operatedBlock->currSize + nextBlock->currSize >= size) {
-		operatedBlock->currSize += nextBlock->currSize;
-		MemoryBlockHeader* nextBlock = visitNextBlock(operatedBlock);
-		if (operatedBlock->currSize > size) {
-			nextBlock->currSize = operatedBlock->currSize - size;
-			MemoryBlockHeader* newFreeBlock = visitNextBlock(operatedBlock);
-			nextBlock->prevSize = newFreeBlock->currSize;
-		}
+		int oldSize = operatedBlock->currSize;
+		//mergeTwoBlocks(operatedBlock, nextBlock);
+		operatedBlock->currSize = size;
+		MemoryBlockHeader* afterNewBlock = visitNextBlock(operatedBlock);
+		if (afterNewBlock == visitNextBlock(nextBlock)) {}
 		else {
-			nextBlock->prevSize = operatedBlock->currSize;
+			afterNewBlock->currSize = oldSize + nextBlock->currSize - size;
+			afterNewBlock->used = false;
+			visitNextBlock(nextBlock)->prevSize = afterNewBlock->currSize;
 		}
+		afterNewBlock->prevSize = operatedBlock->currSize;
+		return operatedBlock;
 	}
 	else if (operatedBlock->currSize == size)
 		return operatedBlock;
@@ -177,45 +195,13 @@ void* Allocator::mem_realloc(void* addr, size_t size) {
 		newFreeBlock->currSize = oldSize - size;
 		return operatedBlock;
 	}
-	/*normalize(size);
-	MemoryBlockHeader* operatingBlock = (MemoryBlockHeader*) addr;
-	int oldSize = operatingBlock->currSize;
-	if (oldSize == size)
-		return addr;
-	else if (oldSize > size) {
-		MemoryBlockHeader* afterOldBlock = visitNextBlock(operatingBlock);
-		afterOldBlock->prevSize = oldSize - size;
-		operatingBlock->currSize = size;
-		MemoryBlockHeader* newFreeBlock = visitNextBlock(operatingBlock);
-		newFreeBlock->used = false;
-		newFreeBlock->currSize = oldSize - size;
-		newFreeBlock->prevSize = size;
-		return addr;
-	}
 	else {
-		MemoryBlockHeader* relocatedBlock = startBlock;
-		while (relocatedBlock < operatedMemoryEnd) {
-			if (isFree(relocatedBlock)) {
-				if (relocatedBlock->currSize > size) {
-					operatingBlock->used = false;
-					relocatedBlock->used = true;
-					MemoryBlockHeader* afterRelocatedBlock = visitNextBlock(relocatedBlock);
-					afterRelocatedBlock->prevSize = relocatedBlock->currSize - size;
-					relocatedBlock->currSize = size;
-					MemoryBlockHeader* newFreeBlock = visitNextBlock(relocatedBlock);
-					newFreeBlock->used = false;
-					newFreeBlock->currSize = size - oldSize;
-					newFreeBlock->prevSize = size;
-					return relocatedBlock;
-				}
-				else if (relocatedBlock->currSize == size)
-					move_data(operatingBlock,
-						relocatedBlock,
-						size);
-			}
-			relocatedBlock = visitNextBlock(relocatedBlock);
+		MemoryBlockHeader* relocatedBlock = (MemoryBlockHeader*) mem_alloc(size);
+		if (relocatedBlock != nullptr) {
+			move_data(operatedBlock, relocatedBlock, operatedBlock->currSize);
+		return relocatedBlock;
 		}
-	}*/
+	}
 }
 
 void Allocator::mem_free(void* addr) {
@@ -249,13 +235,13 @@ void Allocator::mem_free(void* addr) {
 }
 
 void Allocator::mergeTwoBlocks(MemoryBlockHeader* header1, MemoryBlockHeader* header2) {
-	header1->currSize += header2->currSize/* + BLOCK_HEADER_SIZE*/;
+	header1->currSize += header2->currSize;
 	MemoryBlockHeader* nextHeader = visitNextBlock(header2);
 	nextHeader->prevSize = header1->currSize;
 }
 
 void Allocator::mergeThreeBlocks(MemoryBlockHeader* header1, MemoryBlockHeader* header2, MemoryBlockHeader* header3) {
-	header1->currSize += header2->currSize + header3->currSize/* + 2 * BLOCK_HEADER_SIZE*/;
+	header1->currSize += header2->currSize + header3->currSize;
 	MemoryBlockHeader* nextNextHeader = visitNextBlock(header3);
 	nextNextHeader->prevSize = header1->currSize;
 }

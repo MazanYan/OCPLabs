@@ -9,7 +9,7 @@ int main(int argc, char** argv) {
 	void* addr2 = testAlloc.mem_alloc(100);
 	testAlloc.mem_free(addr1);
 	testAlloc.mem_alloc(500);
-	testAlloc.mem_realloc(addr2, 200);
+	testAlloc.mem_realloc(addr2, 300);
 	testAlloc.mem_dump();
 	return 0;
 }
