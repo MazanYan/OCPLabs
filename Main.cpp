@@ -1,15 +1,10 @@
-#include "Allocator.h"
-#include <iostream>
+#include "test.h"
+#include "MemoryBlockHeader.h"
+#include <stdio.h>
 
 int main(int argc, char** argv) {
-	size_t testAllocSize = 1000;
-	std::cout << BLOCK_HEADER_SIZE << std::endl;
-	Allocator testAlloc = Allocator(testAllocSize);
-	void* addr1 = testAlloc.mem_alloc(800);
-	void* addr2 = testAlloc.mem_alloc(100);
-	testAlloc.mem_free(addr1);
-	testAlloc.mem_alloc(500);
-	testAlloc.mem_realloc(addr2, 300);
-	testAlloc.mem_dump();
+	printf("MemoryBlockHeader size: %d bytes\n", BLOCK_HEADER_SIZE);
+	testAlloc();
+
 	return 0;
 }
